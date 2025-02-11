@@ -1,13 +1,12 @@
 using UnityEngine;
-using System.Collections.Generic;
-using System.Collections;
-using Unity.VisualScripting;
-using UnityEngine.EventSystems;
-using JetBrains.Annotations;
-using UnityEditor.Experimental.GraphView;
+using UnityEngine.Serialization;
 
 public class PlayerMotor : MonoBehaviour
 {
+    [SerializeField] private float crouchSmoothTime = 0.1f;
+    private float crouchSmoothVelocity;
+    [SerializeField] private LayerMask collisionLayer;
+    private InputManager inputManager;
     private CharacterController controller;
     private RaycastHit hit;
     private Vector3 playerVelocity;
@@ -16,41 +15,50 @@ public class PlayerMotor : MonoBehaviour
     public float gravity = -9.8f;
     public float jumpHeight = 3f;
     public float rayLength = 1.1f;
-    public bool lerpCrouch;
-    public bool crouching;
-    public bool sprinting;
-    public float crouchTimer;
+    private bool lerpCrouch;
+    private bool crouching;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         controller = GetComponent<CharacterController>();
+        inputManager = GetComponent<InputManager>();
+        crouching = false;
     }
 
     // Update is called once per frame
     void Update()
     {
         isGrounded = controller.isGrounded;
+        if (isGrounded)
+        {
+            if (inputManager.IsSprintPressed)
+            {
+                Sprint();
+            }
+            else
+            {
+                Walk();
+            }
+        }
+        else
+        {
+            Walk();
+        }
 
         if (lerpCrouch)
         {
-            crouchTimer += Time.deltaTime;
-            float p = crouchTimer / 1;
-            p *= p;
-            if (crouching)
-            
-                controller.height = Mathf.Lerp(controller.height, 1, p);
-            
-            else
-                controller.height = Mathf.Lerp(controller.height, 2, p);
-            
-            if (p > 1)
+            float targetHeight = crouching ? 1f : 2f;
+
+            controller.height = Mathf.SmoothDamp(controller.height, targetHeight, ref crouchSmoothVelocity, crouchSmoothTime);
+
+            if (Mathf.Abs(controller.height - targetHeight) < 0.01f)
             {
+                controller.height = targetHeight;
                 lerpCrouch = false;
-                crouchTimer = 0f;
+                crouchSmoothVelocity = 0;
             }
         }
-
     }
 
     //recieve the inputs for InputManager.cs and apply them to Character Controller.
@@ -66,7 +74,6 @@ public class PlayerMotor : MonoBehaviour
             playerVelocity.y = -2;
         }
         controller.Move(playerVelocity * Time.deltaTime);
-
     }
 
     public void Jump()
@@ -75,35 +82,56 @@ public class PlayerMotor : MonoBehaviour
         {
             playerVelocity.y = Mathf.Sqrt(jumpHeight * -3.0f * gravity);
         }
-
     }
 
-    public void Crouch()
+    public void HandleCrouchPerformed()
     {
-        if(crouching)
+        if (!crouching)
         {
-            if(Physics.Raycast(transform.position, Vector3.up, out hit, rayLength)) // sets start of raycast on players position, makes it shoot up, makes it store info when it collides with something, gives it a length.
-            {
-                return;
-            }
-
+            Crouch();
         }
-        
-        crouching = !crouching;
-        if (crouching)
-            speed = 2.5f;
         else
-            speed = 5f;
-        crouchTimer = 0;
+        {
+            UnCrouch();
+        }
+    }
+
+    private void Sprint()
+    {
+        speed = crouching ? 3.5f : 8f;
+    }
+
+    private void Walk()
+    {
+        speed = crouching ? 2.5f : 5;
+    }
+
+    public void HandleJumpStarted()
+    {
+        Walk();
+    }
+
+    private void Crouch()
+    {
+        crouching = true;
         lerpCrouch = true;
     }
 
-    public void Sprint()
+    private void UnCrouch()
     {
-        sprinting = !sprinting;
-        if (isGrounded && sprinting)
-            speed = 8;
-        else
-            speed = 5;
+        if (!CanUnCrouch()) return;
+
+        crouching = false;
+        lerpCrouch = true;
+    }
+
+    private bool CanUnCrouch()
+    {
+        if (Physics.Raycast(transform.position, Vector3.up, out hit, rayLength, collisionLayer))
+        {
+            return false;
+        }
+
+        return true;
     }
 }
